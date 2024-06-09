@@ -54,26 +54,33 @@
 (defun org-babel-execute:asymptote (body params)
   "Execute a block of Asymptote code.
 This function is called by `org-babel-execute-src-block'."
+  (message "params is: %s" params) ;; debug
+  (message "file is: %s" (alist-get :file params)) ;; debug
   (let* ((out-file (cdr (assq :file params)))
-         (format (or (file-name-extension out-file) "pdf"))
+         (format (when out-file (or (file-name-extension out-file) "svg")))
          (cmdline (cdr (assq :cmdline params)))
          (in-file (org-babel-temp-file "asymptote-"))
-	 (out-file-path (if out-file
-			    (org-babel-process-file-name out-file)
-			  nil))
          (cmd (concat "asy "
-		  (if out-file
-		      (concat "-globalwrite -f " format
-		              " -o " (file-name-sans-extension out-file-path))
-		    "-V")
-		  " " cmdline
-		  " " (org-babel-process-file-name in-file))))
+	      (if out-file
+		  (concat "-globalwrite -f " format
+		          " -o " (file-name-sans-extension
+				  (org-babel-process-file-name out-file))))
+	      " " cmdline
+	      " " (org-babel-process-file-name in-file))))
+    ;; Writing input asy file
     (with-temp-file in-file
       (insert (org-babel-expand-body:generic
 	       body params
 	       (org-babel-variable-assignments:asymptote params))))
-    (message cmd) (shell-command cmd)
-    nil)) ;; signal that output has already been written to file
+    ;; Executing command
+    (if out-file
+	(progn (shell-command cmd) nil)
+      (progn
+	;; try to get a text output... but not possible
+	;; to remove the format under a link
+	(with-temp-buffer
+	  (shell-command cmd (current-buffer))
+	  (buffer-string))))))
 
 (defun org-babel-prep-session:asymptote (_session _params)
   "Return an error if the :session header argument is set.

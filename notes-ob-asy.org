@@ -1,0 +1,287 @@
+-*- mode: org; coding: utf-8-unix; fill-column: 80; mode: auto-fill; -*-
+
+#+TITLE:   Notes on ob-asymptote
+#+AUTHOR:  Mathieu Pouit
+#+DATE:    2024-06-08
+
+#+LANGUAGE:    en fr
+# my shortcut or French writing:
+# C-. …
+# C-M ' «  »
+# C- :   (insécable)
+# M-': ’
+
+#+STARTUP: showall
+#+STARTUP: hidestars
+#+STARTUP: noindent
+#+STARTUP: inlineimages
+#+STARTUP: latexpreview
+
+
+* What is ob-asymptote?
+
+The library [[https://github.com/hurrja/ob-asymptote][ob-asymptote]] allows to use [[https://asymptote.sourceforge.io/][Asymptote]] code chunk in the Emacs Org
+buffers. This code chunks allows to display figures built by this command line
+program. And one of its advantage is its ease to generate *svg* files, which can
+now be included pretty well in notebooks.
+
+Eric Shulte has develop the first version, which was using the outdated library
+cl. A new version is now (2024) maintained by Jarmo Hurri under this [[https://github.com/hurrja/ob-asymptote][link]].
+
+
+* Testing your installation and getting an image.
+
+Here is a first example to check it is working. SVG format is my prefered
+output, since the sizing of the image in the page fits pretty well by default,
+even for screen with large resolution. It is also a format giving an actual
+transparent background, which fits with the dark Theme I'm choosing by default
+(I used Tango dark theme, which is a nice dark theme for Emacs available by
+default).
+
+Note also how I'm redefinig the defaultpen right from the begining of the chunk
+here. You can adapt this to your screen needs.
+
+#+begin_src asymptote :results file :file demo01.svg
+size(15cm);
+defaultpen(palecyan+linewidth(2mm)+fontsize(18pt));
+draw((0,0)--(1,1)..(2,0)..(3,1)--(4,0)::(5,0)::(6,1));
+
+label("0",(0,0),S);
+label("1",(1,0),S);
+label("2",(2,0),S);
+label("3",(3,0),S);
+label("4",(4,0),S);
+label("5",(5,0),S);
+label("6",(6,0),S);
+label("0",(6,0),E);
+label("1",(6,1),E);
+
+draw((0,0)--(6,0), linewidth(0.2mm)+dashed+white);
+draw((0,1)--(6,1), linewidth(0.2mm)+dashed+white);
+shipout(bbox(3mm, nullpen));
+#+end_src
+
+#+RESULTS:
+[[file:demo01.svg]]
+
+
+The code is executed with ~C-c C-c~. And then type ~C-c C-x C-v~ to visualize the
+image. In certain cases, you have to double the command.
+
+The code chunk above is generating a file, that is then display on the notebook
+using the feature ~inlineimages~ declared in the header comands of this notebook.
+The good practice would be to put such images in a dedicated subdirectory (I
+used often a ~./img~ subdirectory for this), in particular if you have many of
+them. For this notebook we keep it simple (the subdirectory needs to be present,
+before launching the code chunk).
+
+
+* It doesn't work!  
+
+If you couldn't display (or redisplay) the image above, check your
+installation. First you need to install the package Asymptote. You should have
+that in your linux official repository, otherwise there is the [[https://github.com/vectorgraphics/asymptote/tree/master/base][github]]
+repository.
+
+This package will install the following library, that helps you working with asy
+code, in particular asy source files.
+
+| asy-init.el     | initialisation loader of libraries                |
+| asy-keywords.el | the reserved words of asysmptote for highlighting |
+| asy-mode.el     | the mode asymptote for writing ~asy~ files.         |
+
+In my linux installation, those files are installed right on the [[/usr/share/emacs/site-lisp][site-lisp]]
+directory.
+
+To be sure to load this libraries, I have this line in my Emacs initialisation
+file.
+
+#+begin_src emacs-lisp
+(load-library "/usr/share/emacs/site-lisp/asy-init")
+#+end_src
+
+The you need to have the package *ob-asymptote*. It can be installed from *elpa*
+repository, but I don't recommend it so long a bug is not corrected (as of june
+2024): the file extensions are doubled, when generating the files, which breaks
+the display process. There is a corrected version in this [[https://github.com/mat90hub/ob-asymptote][repository]].
+
+If you use it, you will have to work with a local copy. I installed usually
+local copies under [[~/.emacs.d/eloc]] (eloc stands for local and similar to the
+other directory elpa available there also). So I have installed the libraries
+under [[~/.emacs.d/eloc/asy/]].
+
+Then I added those lines to my initialisation file
+
+#+begin_src emacs-lisp
+;; my local copy of asymptote.el so long repository not updated.
+(add-to-list 'load-path "~/.emacs.d/eloc/asy/")
+(load-file "~/.emacs.d/eloc/asy/ob-asymptote.elc")
+(autoload 'ob-asymptote "ob-asymptote.elc" "Org-Babel support for evaluating asymptote source code." t)
+
+;; adding asymptote to the langages recongized by org-babel
+(with-eval-after-load 'org
+  (add-to-list 'org-babel-load-languages '(asymptote . t)))
+#+end_src
+
+The path of the first two instructions needs to be adapted to the file location
+you choose.
+
+Also check that you have the different package to visualize ~svg~ file under
+Emacs. Personnally I have ~svg.el~ and ~preview-dvisvgm.el~ installed and it works
+perfectly. Alternatively, you may change extension to ~png~.
+
+
+* Understanding the programmation of the library
+
+This part is now for developpers who whish to give a hand to further improve the
+use of Asymptote under an org notebook.
+
+
+** org-babel-execute:asymptote
+
+Each langage running under org-babel has this function. It has two parameters:
+- ~body~: the source code to be executed
+- ~params~: the parameters given to the command line
+
+It is then equivalent to execute this command:
+
+#+begin_src emacs-lisp :noeval
+(shell-command asy (params) -command=(body))
+#+end_src
+
+This function is called by ~org-babel-execute-src-block~, which is belonging to
+the package ~ob-core.el~. This function is concatenating ~org-babel-execute~ with
+the langage chose (~lang~).
+
+The parameters are given in a form of an ~alist~ with constant keys starting by
+double point and which are the option we give to the code chunks headers. An
+important parameters here is ~(alist-get :file)~ giving the path to the image file
+that will be generated. The function build a ~cmd~ from the different parameter,
+that will be executed.
+
+A first bloc in this function is building a temporary buffer called ~in-file~, in
+which it writes the body containing the command to execute. It uses for this the
+command from ~ob-core.el~ called ~org-babel-expand-body:generic~. The names of this
+temporary file is already included in the ~cmd~ string. To understand how this
+command is build, one can refer to the Asymptote manual, [[https://asymptote.sourceforge.io/doc/Options.html][chapter 9]].
+
+The second bloc is executing the ~cmd~ in a shell ~(shell-command cmd)~. In the vast
+majority of the cases, this command generate an image file, which is referenced
+in the code chunk header. When it is finished, the image file is present and one
+has just to type ~C-c C-x C-v~ so that the image given in the link is inserted in
+the notebook.
+
+
+
+** Getting an output from write command
+
+[[https://asymptote.sourceforge.io/doc/index.html][Asymptote]] has an [[https://asymptote.sourceforge.io/doc/Interactive-mode.html][interactive]] mode and a [[https://asymptote.sourceforge.io/doc/Files.html#index-write][write]] command, that can be of some
+interest under an Org notebook. This part is describing how this kind of output
+has been generated.
+
+To detect whether the user wants an image file or a text output, the variable
+~out-file~ is checked.
+
+The difficulty I faced is that asymptote is designed to write output in a file,
+but not give it as a feedback. So one need to execute the command in a buffer
+and then convert the output sent to another buffer into a string. The commande
+~shell-command~ allow to execute the ~asy~ programme and to put the result of it in
+buffer (and the second buffer is to retrieve error).
+
+#+begin_src emacs-lisp :results value
+(defun execute-asymptote-code (code)
+  "Execute a code entered as a string and return the resulting string."
+  (with-temp-buffer
+    (shell-command (concat "asy -command '" code "'")
+		   (current-buffer) (current-buffer))
+    (buffer-string)))
+
+(let ((asymptote-code "write(\"Hello World!\");"))
+  (message "%s" (execute-asymptote-code asymptote-code)))
+#+end_src
+
+#+RESULTS:
+: Hello World!
+
+
+In our case the commande has been written to a temporary file. If we want to
+simulate this, it would be like this.
+
+
+#+begin_src emacs-lisp :results value
+(defun execute-asymptote-code (code)
+  "Execute a code entered as a string and return the resulting string."
+  (let (in-file (org-babel-temp-file "asymptote-"))
+    (with-temp-file in-file (insert
+			     (org-babel-expand-body:generic
+			      code nil
+			      (org-babel-variable-assignments:asymptote nil))))
+    (with-temp-buffer
+      (shell-command (concat "asy " code in-file)
+		     (current-buffer) (current-buffer))
+      (buffer-string))))
+
+(let ((asymptote-code "write(\"Hello World!\");"))
+  (message "%s" (execute-asymptote-code asymptote-code)))
+#+end_src
+
+
+
+
+
+
+Testing if it works
+
+#+begin_src asymptote :results output raw
+write("Hello World!");
+#+end_src
+
+
+
+
+
+#+begin_src asymptote :results output raw
+pair lst = (1, 2);
+write(lst);
+#+end_src
+
+#+RESULTS:
+[[file:(1,2)
+]]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#+begin_src bash
+asy /tmp/babel-hFTyRb/asymptote-HMUh5d
+#+end_src
+
+#+RESULTS:
+: Hello World!
+
+
+#+begin_src emacs-lisp :results value
+
+(setq cmd "asy /tmp/babel-hFTyRb/asymptote-HMUh5d")
+(setq result (shell-command cmd))
+#+end_src
+
+#+RESULTS:
+: 0
+
